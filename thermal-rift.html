@@ -1,0 +1,196 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Thermal Rift: The Lost City</title>
+<style>
+:root{--bg:#070a18;--fg:#e8f0ff;--ac:#5ef0ff;--pn:rgba(12,18,40,.94);--ln:#2b3a6b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;touch-action:none;user-select:none}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{position:fixed;top:env(safe-area-inset-top,0px);left:0;right:0;display:flex;align-items:center;gap:8px;padding:8px;flex-wrap:wrap;pointer-events:none;text-shadow:0 1px 3px #000}#hud button{pointer-events:auto}
+.pip{display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;border:2px solid var(--c);margin:0 3px;opacity:.6}.pip.d{background:var(--c);color:#000;opacity:1}
+.b{background:#16224a;color:var(--fg);border:1px solid var(--ln);border-radius:10px;padding:9px 12px;font:inherit;cursor:pointer;margin:3px}.b:hover{border-color:var(--ac)}.b.on{background:#0f5c68;border-color:var(--ac)}
+.bar{height:12px;background:#0b1230;border-radius:6px;overflow:hidden;border:1px solid var(--ln);margin:4px 0}.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ff7a3d,#ffd25e)}
+#ht{position:fixed;bottom:calc(90px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;pointer-events:none;text-shadow:0 1px 4px #000;font-weight:600}
+#ts{position:fixed;top:64px;left:50%;transform:translateX(-50%);background:var(--pn);border:1px solid var(--ac);padding:8px 14px;border-radius:10px;opacity:0;transition:opacity .4s;pointer-events:none;max-width:90vw;text-align:center}
+#pn{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(94vw,580px);max-height:84vh;overflow:auto;background:var(--pn);border:1px solid var(--ln);border-radius:14px;padding:14px;display:none;z-index:4;touch-action:pan-y}
+#pn h3{margin:0 0 6px}#pn p{margin:6px 0}.box{background:#0a1030;border:1px solid var(--ln);border-radius:8px;padding:8px;margin:6px 0}
+#ov{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(3,5,15,.8);z-index:6}.card{background:var(--pn);border:1px solid var(--ac);border-radius:14px;padding:20px;width:min(92vw,520px);max-height:86vh;overflow:auto;touch-action:pan-y}
+#joy,.tb{display:none;position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:3}#joy{left:16px;width:110px;height:110px;border-radius:50%;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.3)}
+#kn{position:absolute;left:35px;top:35px;width:40px;height:40px;border-radius:50%;background:rgba(94,240,255,.6)}.tb{right:16px;width:64px;height:64px;border-radius:50%;border:2px solid var(--ac);background:rgba(20,40,80,.7);color:#fff;font:bold 20px sans-serif}#bJ{right:96px}
+@media (pointer:coarse){#joy,.tb{display:block}}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="hud"><b>Thermal Rift</b><span id="pips"></span><span id="obj"></span><span style="flex:1"></span><button class="b" id="bj">📖 Journal</button><button class="b" id="bp">⏸</button><button class="b" id="bsn">🔊</button></div>
+<div id="ht"></div><div id="ts"></div><div id="pn"></div><div id="ov"></div>
+<div id="joy"><i id="kn"></i></div><button class="tb" id="bJ">⤒</button><button class="tb" id="bE">E</button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=id=>document.getElementById(id),T=THREE,H=(id,t)=>{const e=$(id);if(e)e.innerHTML=t},W=(id,p)=>{const e=$(id);if(e)e.style.width=Math.max(0,Math.min(100,p))+'%'};
+let save={done:[],j:[],cp:null};try{const s=JSON.parse(localStorage.getItem('tr3'));if(s)save=s}catch(e){}
+const persist=()=>{try{localStorage.setItem('tr3',JSON.stringify(save))}catch(e){}};
+let AC,snd=true,paused=1,openIdx=-1;
+function beep(f=600,d=.12,ty='sine'){if(!snd)return;try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();o.type=ty;o.frequency.value=f;g.gain.setValueAtTime(.05,AC.currentTime);g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d)}catch(e){}}
+function toast(t){const e=$('ts');e.textContent=t;e.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.opacity=0,3000)}
+const jn=t=>{if(!save.j.includes(t)){save.j.push(t);persist()}};
+/* ---------- 3D setup ---------- */
+const R=new T.WebGLRenderer({canvas:$('c'),antialias:true});R.setPixelRatio(Math.min(devicePixelRatio,1.5));
+const sc=new T.Scene();sc.background=new T.Color(0x070a18);sc.fog=new T.FogExp2(0x070a18,.016);
+const cam=new T.PerspectiveCamera(65,1,.1,150);
+function rs(){R.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}addEventListener('resize',rs);rs();
+const hemi=new T.HemisphereLight(0x8fb0ff,0x201030,.6);sc.add(hemi);const sun=new T.DirectionalLight(0xffffff,.5);sun.position.set(5,20,8);sc.add(sun);
+const mk=(g,c,e=0,o={})=>new T.Mesh(g,new T.MeshStandardMaterial(Object.assign({color:c,emissive:c,emissiveIntensity:e,roughness:.6,metalness:.2},o)));
+const fl=mk(new T.CircleGeometry(42,48),0x141a33);fl.rotation.x=-Math.PI/2;sc.add(fl);
+const CR=[];for(let i=0;i<70;i++){const a=Math.random()*6.283,r=30+Math.random()*10,h=3+Math.random()*8;const c=mk(new T.ConeGeometry(.8+Math.random(),h,5),new T.Color().setHSL(.5+Math.random()*.25,.8,.5).getHex(),.6,{transparent:true,opacity:.85});c.position.set(Math.cos(a)*r,h/2,Math.sin(a)*r);c.rotation.z=(Math.random()-.5)*.4;sc.add(c);CR.push(c)}
+const BL=[];for(let i=0;i<16;i++){const a=i*.3927+.2,h=3+Math.random()*4;const b=mk(new T.BoxGeometry(2.2,h,2.2),0x2a3357,.05);b.position.set(Math.cos(a)*24,h/2,Math.sin(a)*24);sc.add(b);BL.push(b)}
+function Flow(color,a,b,par){const g=new T.Group(),p=[];for(let i=0;i<10;i++){const m=mk(new T.SphereGeometry(.12,8,6),color,1.2);g.add(m);p.push(m)}par.add(g);return{on:0,upd(t){p.forEach((m,i)=>{m.visible=this.on>0;const u=(t*.5+i/10)%1;m.position.lerpVectors(a,b,u);m.position.y+=Math.sin(u*3.14)*1.2})}}}
+/* ---------- state ---------- */
+const e0={c:'none',run:0,sys:100,warm:0,flow:0},e1={hold:0,prog:0,cold:0,flow:0},e2={b1:0,b2:0,f1:0,f2:0,flash:0},e3={mode:'exo',cat:0,m:0,x:0,roll:0,wait:0,seen:{},hold:0},e4={o2:1,g:6,L:0,seen:{},glow:0};
+const RG={exo:{R:50,P:20,pk:[110,80]},endo:{R:20,P:50,pk:[90,60]}};
+const CC={};function curve(m,c){const k=m+c;if(CC[k])return CC[k];const d=RG[m],pk=d.pk[c],bs=x=>d.R+(d.P-d.R)*x*x*(3-2*x),bp=x=>Math.exp(-(((x-.4)/.16)**2));let A=pk-d.R;for(let n=0;n<8;n++){let mx=-1e9;for(let s=0;s<=200;s++)mx=Math.max(mx,bs(s/200)+A*bp(s/200));A+=pk-mx}const a=[];for(let s=0;s<=200;s++)a.push(bs(s/200)+A*bp(s/200));return CC[k]=a}
+/* ---------- stations ---------- */
+function b0(g){const ch=mk(new T.CylinderGeometry(.9,.9,1.8,20),0xff7a3d,.5);ch.position.set(-2.5,1.3,0);g.add(ch);
+const pv=new T.Group();pv.position.set(0,.5,0);const br=mk(new T.BoxGeometry(5,.25,2.2),0x4477ff,.4);br.position.x=2.5;pv.add(br);g.add(pv);
+const f=Flow(0xffaa44,new T.Vector3(-1.6,1.5,0),new T.Vector3(3,.9,0),g),cold=new T.Color(0x4477ff),hot=new T.Color(0xff7733);
+return t=>{pv.scale.x=.15+.85*e0.warm;br.material.color.copy(cold).lerp(hot,e0.warm);br.material.emissive.copy(br.material.color);ch.material.emissiveIntensity=.2+e0.sys/100*.8;f.on=e0.flow;f.upd(t)}}
+function b1(g){const ch=mk(new T.CylinderGeometry(.9,.9,1.8,20),0x33ccff,.5);ch.position.set(-2.5,1.3,0);g.add(ch);
+const w=mk(new T.BoxGeometry(6,.3,3),0x2255cc,.4);w.position.set(2,.55,0);g.add(w);const ic=mk(new T.BoxGeometry(6,.3,3),0xdff6ff,.5,{transparent:true,opacity:.9});g.add(ic);
+const f=Flow(0x66ddff,new T.Vector3(2,1.2,0),new T.Vector3(-1.6,1.5,0),g),c1=new T.Color(0x2255cc),c2=new T.Color(0x99ddff);
+return t=>{ic.visible=e1.cold>.02;ic.scale.y=e1.cold*2+.01;ic.position.set(2,.7+.15*ic.scale.y,0);w.material.color.copy(c1).lerp(c2,e1.cold);w.material.emissive.copy(w.material.color);ch.material.emissiveIntensity=.2+e1.prog/100*.8;f.on=e1.flow;f.upd(t)}}
+const AP=[[[-1,-.6],[-.45,-.6],[.3,.6],[1.1,.6]],[[-1.4,-.9],[-.3,-.9],[.3,.9],[1.4,.9]],[[-1.4,0],[.6,0],[-.75,0],[1.25,0]]];
+function tg(i){const H1=i%2,Cl=i>1,f=e2[i==0||i==2?'f1':'f2'],b=e2[Cl?'b2':'b1'];return AP[f?2:b?1:0][i]}
+function b2(g){const tb=mk(new T.BoxGeometry(5.6,.2,3.4),0x33406e,.1);tb.position.y=1;g.add(tb);
+const A=[0,1,2,3].map(i=>{const a=mk(new T.SphereGeometry(i<2?.32:.5,16,12),i<2?0xffffff:0x44ff88,.4);a.position.set(0,1.7,0);g.add(a);return a});
+return t=>{A.forEach((a,i)=>{const p=tg(i);a.position.x+=(p[0]*1.3-a.position.x)*.08;a.position.z+=(p[1]*1.3-a.position.z)*.08;a.position.y=1.7+Math.sin(t*2+i)*.06+e2.flash*.3;a.material.emissiveIntensity=.4+e2.flash*1.5})}}
+function b3(g){const N=41,u=[],c=[];for(let i=0;i<N;i++){const a=mk(new T.BoxGeometry(.22,.22,.22),0xff9a4d,1),b=mk(new T.BoxGeometry(.2,.2,.2),0x5eff9a,1);g.add(a,b);u.push(a);c.push(b)}
+const ball=mk(new T.SphereGeometry(.35,16,12),0xffffff,.8);g.add(ball);
+return t=>{const A=curve(e3.mode,0),B=curve(e3.mode,1);for(let i=0;i<N;i++){const s=Math.round(i/(N-1)*200),x=-4+8*i/(N-1);u[i].position.set(x,.5+A[s]/25,-.6);c[i].position.set(x,.5+B[s]/25,.6);c[i].visible=!!e3.cat}
+const s=Math.round(e3.x*200);ball.position.set(-4+8*e3.x,.85+curve(e3.mode,e3.cat)[s]/25,e3.cat?.6:-.6)}}
+function b4(g){const dm=mk(new T.SphereGeometry(4.8,24,12,0,6.283,0,1.5708),0x66ffaa,.15,{transparent:true,opacity:.18,side:T.DoubleSide});g.add(dm);
+for(let i=0;i<7;i++){const p=mk(new T.ConeGeometry(.5,1.8,6),0x33cc55,.3),a=i*.9;p.position.set(Math.cos(a)*3.4,1,Math.sin(a)*3.4);g.add(p)}
+const cell=mk(new T.SphereGeometry(1.1,20,14),0xffd25e,.3,{transparent:true,opacity:.7});cell.position.y=2;g.add(cell);const nu=mk(new T.SphereGeometry(.4,12,8),0xff6688,.5);nu.position.set(.2,2.1,.2);g.add(nu);
+const lp=[];for(let i=0;i<6;i++){const l=mk(new T.SphereGeometry(.25,10,8),0xffee55,.8);l.position.set(-1.5+i*.6,.7,2.6);g.add(l);lp.push(l)}
+return t=>{cell.rotation.y=t;cell.scale.setScalar(1+.05*Math.sin(t*4)*(.3+e4.glow));cell.material.emissiveIntensity=.3+e4.glow*1.5;lp.forEach((l,i)=>l.visible=i<e4.L)}}
+const ST=[{n:'Exothermic Engine',c:0xff7a3d,b:b0},{n:'Frozen Canal',c:0x33ccff,b:b1},{n:'Bond Workbench',c:0x44ff88,b:b2},{n:'Barrier Landscape',c:0xb07bff,b:b3},{n:'Greenhouse',c:0xffd25e,b:b4}];
+ST.forEach((s,i)=>{const a=i*1.2566-1.57;s.p=new T.Vector3(Math.cos(a)*15,0,Math.sin(a)*15);s.g=new T.Group();s.g.position.copy(s.p);sc.add(s.g);
+const pl=mk(new T.CylinderGeometry(5.5,5.8,.2,32),0x1d2750);pl.position.y=.1;s.g.add(pl);
+s.bc=mk(new T.CylinderGeometry(.15,.15,16,8),s.c,1,{transparent:true,opacity:.5});s.bc.position.y=8;s.g.add(s.bc);
+s.l=new T.PointLight(s.c,.3,24);s.l.position.set(0,5,0);s.g.add(s.l);s.u=s.b(s.g)});
+/* player */
+const pl=new T.Group(),pp=new T.Vector3(0,0,0);
+[[new T.CylinderGeometry(.35,.4,1,12),0x2c7fff,.2,0,.9,0],[new T.SphereGeometry(.32,14,10),0xffe0c0,0,0,1.65,0],[new T.BoxGeometry(.4,.14,.2),0x5ef0ff,1.5,0,1.68,.25],[new T.BoxGeometry(.5,.6,.25),0xff9b3d,.3,0,1,-.4]].forEach(a=>{const m=mk(a[0],a[1],a[2]);m.position.set(a[3],a[4],a[5]);pl.add(m)});sc.add(pl);
+const CF=[];function boom(){const g=new T.SphereGeometry(.15,6,4);for(let i=0;i<90;i++){const m=mk(g,new T.Color().setHSL(Math.random(),1,.6).getHex(),1.5);m.position.set(0,3,0);m.v=new T.Vector3((Math.random()-.5)*14,8+Math.random()*10,(Math.random()-.5)*14);m.life=4;sc.add(m);CF.push(m)}}
+/* ---------- UI helpers ---------- */
+function ov(h){$('ov').innerHTML='<div class="card">'+h+'</div>';$('ov').style.display='flex';paused=1}
+function cov(){$('ov').style.display='none';paused=0}
+function hud(){$('pips').innerHTML=ST.map((s,i)=>`<span class="pip${save.done.includes(i)?' d':''}" style="--c:#${s.c.toString(16).padStart(6,'0')}" title="${s.n}">${i+1}</span>`).join('');const n=ST.findIndex((s,i)=>!save.done.includes(i));$('obj').textContent=n<0?'City restored!':'Go to: '+ST[n].n}
+const FJ=['Exothermic: products have less energy than reactants, so energy is released to the surroundings (bridge warms). ΔH < 0, e.g. CH₄ burning ΔH = −890 kJ mol⁻¹.','Endothermic: energy is absorbed from the surroundings (canal cools) and must keep being supplied. Products have more energy. ΔH > 0, e.g. NH₄NO₃ dissolving ≈ +26 kJ mol⁻¹.','H₂ + Cl₂ → 2HCl: ΔH = energy to break bonds − energy released forming bonds = (436 + 243) − (2 × 432) = −185 kJ mol⁻¹.','A catalyst gives a lower-energy route (lower activation energy). ΔH stays the same and the catalyst is not used up.','Aerobic respiration releases much more energy per glucose (~30 units) than anaerobic (~2). Lipids are a reserve energy store from nutrients, drawn on later (with oxygen).'];
+function fin(i){if(save.done.includes(i))return;save.done.push(i);save.cp=i;jn(FJ[i]);persist();hud();toast('✔ '+ST[i].n+' restored — checkpoint saved');beep(700,.15);setTimeout(()=>beep(900,.2),150);setTimeout(()=>beep(1200,.3),320);if(save.done.length===5)setTimeout(end,2800)}
+function end(){closeP();boom();ov(`<h2>🌟 The Lost City is alive!</h2><p>All five engines are running. What you discovered:</p><ul>${FJ.map(t=>'<li>'+t+'</li>').join('')}</ul><button class="b" id="ex">Explore the city</button><button class="b" id="rp">Play again</button>`);$('ex').onclick=cov;$('rp').onclick=()=>{save={done:[],j:[],cp:null};persist();location.reload()}}
+function jrn(){ov(`<h2>📖 Mission journal</h2>${save.j.length?'<ul>'+save.j.map(t=>'<li>'+t+'</li>').join('')+'</ul>':'<p>Nothing recorded yet. Restore an engine to make your first discovery.</p>'}<button class="b" id="cv">Close</button>`);$('cv').onclick=cov}
+function pause(){ov(`<h2>Paused</h2><button class="b" id="r1">Resume</button><button class="b" id="r2">Return to checkpoint</button><button class="b" id="r3">Restart game</button>`);$('r1').onclick=cov;$('r2').onclick=()=>{place();cov()};$('r3').onclick=()=>{save={done:[],j:[],cp:null};persist();location.reload()}}
+function place(){const s=save.cp==null?null:ST[save.cp];if(s)pp.set(s.p.x*.62,0,s.p.z*.62);else pp.set(0,0,0)}
+const hold=(id,f)=>{const e=$(id);e.onpointerdown=ev=>{ev.preventDefault();f(1)};['onpointerup','onpointerleave','onpointercancel'].forEach(k=>e[k]=()=>f(0))};
+/* ---------- panels ---------- */
+const PN=[
+{h:`<h3>🔥 Exothermic Engine</h3><p>The sealed chamber is the <b>system</b>; the bridge, air and you are the <b>surroundings</b>. Connect a conduit, then ignite: CH₄ + 2O₂ → CO₂ + 2H₂O</p>
+<p>Conduit leads to: <button class="b" id="c0a">Bridge (surroundings)</button><button class="b" id="c0b">Back into chamber</button><button class="b" id="c0c">Nowhere (sealed)</button></p><button class="b" id="ig">🔥 Ignite</button>
+<p>System (chemical) energy</p><div class="bar"><i id="bs"></i></div><p>Bridge temperature</p><div class="bar"><i id="bw"></i></div><p id="m0"></p><p id="d0"></p>`,
+s(){const M={a:'bridge',b:'loop',c:'none'},sel=()=>{for(const j in M)$('c0'+j).classList.toggle('on',M[j]===e0.c)};for(const k in M)$('c0'+k).onclick=()=>{e0.c=M[k];sel();beep(500)};sel();
+$('ig').onclick=()=>{if(e0.sys<=60){e0.sys=100;e0.warm=0}
+if(e0.c==='bridge'){e0.run=1;H('m0','Reacting… chemical energy flows out through the conduit into the surroundings.');beep(300,.3,'sawtooth')}
+else if(e0.c==='loop'){H('m0','The conduit returns the energy to the same chamber, so the bridge stays cold. Energy must reach the <b>surroundings</b>. Try again.');beep(150,.3,'square')}
+else H('m0','Sealed chamber: the energy has nowhere to go and just heats the chamber. Connect the conduit to the bridge and ignite again.')}},
+u(dt){if(e0.run){e0.flow=1;e0.sys=Math.max(60,e0.sys-dt*10);e0.warm=(100-e0.sys)/40;if(e0.sys<=60){e0.run=0;e0.flow=0;fin(0)}}
+W('bs',e0.sys);W('bw',e0.warm*100);if(e0.warm>0)H('d0',`Products end with <b>less energy</b> than the reactants, and the difference went to the surroundings.<br><b>ΔH < 0</b> (exothermic). Methane burning: ΔH = −890 kJ mol⁻¹.${e0.warm>=1?'<br>✔ The bridge is warm and extended — engine restored!':''}`)}},
+{h:`<h3>❄ Frozen Canal</h3><p>Ammonium nitrate dissolving <b>absorbs</b> energy: NH₄NO₃(s) → NH₄⁺(aq) + NO₃⁻(aq). The canal water (surroundings) supplies it, so the canal cools. Hold the pump to keep it going.</p>
+<button class="b" id="pump" style="width:100%;padding:16px">Hold: pump energy from canal → chamber</button><p>Reaction progress</p><div class="bar"><i id="p1"></i></div><p>Canal temperature</p><div class="bar"><i id="c1" style="background:linear-gradient(90deg,#66ddff,#ff9a4d)"></i></div><p>System energy</p><div class="bar"><i id="s1b"></i></div><p id="m1"></p><p id="d1"></p>`,
+s(){hold('pump',v=>e1.hold=v)},
+u(dt){if(e1.hold&&e1.prog<100){e1.prog=Math.min(100,e1.prog+dt*12);e1.flow=1}else e1.flow=0;e1.cold=e1.prog/100;
+W('p1',e1.prog);W('c1',100-e1.cold*70);W('s1b',30+e1.prog*.4);
+H('m1',e1.prog>=100?'✔ Fully dissolved — the canal is frozen solid. Engine restored!':e1.prog>0&&!e1.hold?'You let go, so the process stalled. Endothermic changes only continue while energy keeps being supplied.':'');
+if(e1.prog>0)H('d1','Products have <b>more energy</b> than the reactants, taken from the surroundings.<br><b>ΔH > 0</b> (endothermic), about +26 kJ mol⁻¹.');if(e1.prog>=100)fin(1)}},
+{h:`<h3>⚗ Bond Workbench</h3><p>H₂ + Cl₂ → 2 HCl. Bond energies (kJ mol⁻¹): <b>H–H 436</b>, <b>Cl–Cl 243</b>, <b>H–Cl 432</b>. Breaking bonds takes in energy; making bonds gives it out.</p>
+<p>Energy supplied: <b id="sv">0</b> kJ mol⁻¹<input type="range" id="sl" min="0" max="500" value="0" style="width:100%"></p>
+<button class="b" id="s1">Break H–H</button><button class="b" id="s2">Break Cl–Cl</button><button class="b" id="s3">Form H–Cl</button><button class="b" id="s4">Form 2nd H–Cl</button><button class="b" id="rs2">↺ Reset</button><div class="box" id="calc"></div><p id="m2"></p>`,
+s(){const sl=$('sl');sl.oninput=()=>H('sv',sl.value);
+const brk=(k,n,nm)=>()=>{if(e2[k])return;const v=+sl.value;if(v<n){H('m2',`Only ${v} kJ mol⁻¹ supplied — the ${nm} bond needs ${n}, so it holds. Raise the energy and try again.`);beep(150,.2,'square');return}e2[k]=1;e2.flash=1;H('m2',`${nm} bond broken: ${n} kJ mol⁻¹ absorbed (energy in).`);beep(400)};
+$('s1').onclick=brk('b1',436,'H–H');$('s2').onclick=brk('b2',243,'Cl–Cl');
+const frm=k=>()=>{if(!(e2.b1&&e2.b2)){H('m2','Break both reactant bonds first — you need free atoms to make new bonds.');return}if(e2[k])return;e2[k]=1;e2.flash=1;H('m2','New H–Cl bond formed: 432 kJ mol⁻¹ released (energy out).');beep(800)};
+$('s3').onclick=frm('f1');$('s4').onclick=frm('f2');$('rs2').onclick=()=>{e2.b1=e2.b2=e2.f1=e2.f2=0;H('m2','')}},
+u(dt){const br=e2.b1*436+e2.b2*243,fm=(e2.f1+e2.f2)*432,all=e2.b1&&e2.b2&&e2.f1&&e2.f2;
+H('calc',`Bonds broken (energy in): ${e2.b1?'436':'…'} + ${e2.b2?'243':'…'} = <b>${br}</b><br>Bonds formed (energy out): ${e2.f1?'432':'…'} + ${e2.f2?'432':'…'} = <b>${fm}</b><br>ΔH = energy to break − energy from forming<br>${all?`ΔH = ${br} − ${fm} = <b>${br-fm} kJ mol⁻¹</b> → exothermic (ΔH < 0) ✔ Workbench restored!`:'ΔH = finish all four steps to see it'}`);if(all)fin(2)}},
+{h:`<h3>⛰ Activation Barrier & Energy Instrument</h3><p>Hold to add energy and push the particle over the barrier. Try the steep route, then install a catalyst.</p>
+<canvas id="cn" width="560" height="300" style="width:100%;background:#050818;border-radius:8px"></canvas>
+<button class="b" id="mE">Exothermic example</button><button class="b" id="mN">Endothermic example</button><button class="b" id="ct">Install catalyst</button><button class="b" id="hd3">Hold: add energy</button>
+<p>Energy gathered</p><div class="bar"><i id="b3"></i></div><p id="m3"></p>`,
+s(){const rst=()=>{e3.m=e3.x=e3.roll=0;e3.wait=0},md=m=>()=>{e3.mode=m;rst();$('mE').classList.toggle('on',m==='exo');$('mN').classList.toggle('on',m==='endo')};
+$('mE').onclick=md('exo');$('mN').onclick=md('endo');md(e3.mode)();$('ct').onclick=()=>{e3.cat^=1;rst();$('ct').textContent=e3.cat?'Remove catalyst':'Install catalyst';$('ct').classList.toggle('on',!!e3.cat);beep(600)};
+$('ct').textContent=e3.cat?'Remove catalyst':'Install catalyst';hold('hd3',v=>e3.hold=v)},
+u(dt){const d=RG[e3.mode],Ea=d.pk[e3.cat]-d.R,dh=d.P-d.R,dhs=(dh>0?'+':'−')+Math.abs(dh);
+if(!e3.roll&&e3.x<1){e3.m=e3.hold?Math.min(Ea,e3.m+dt*30):Math.max(0,e3.m-dt*50);e3.x=.4*(e3.m/Ea);if(e3.m>=Ea)e3.roll=1}
+else if(e3.roll){e3.x+=dt*.6;if(e3.x>=1){e3.x=1;e3.roll=0;e3.wait=1.6;e3.seen[e3.cat?'c':'u']=1;
+H('m3',e3.cat?`Catalyst route: only ${Ea} needed (lower Ea). ΔH is still ${dhs} and the catalyst is still there — not used up.`:`Steep route: you had to supply ${Ea} kJ mol⁻¹ (Ea). ΔH = ${dhs}. Now try the catalyst.`);beep(900);if(e3.seen.c&&e3.seen.u)fin(3)}}
+else{e3.wait-=dt;if(e3.wait<=0){e3.x=0;e3.m=0}}
+W('b3',e3.m/Ea*100);dr3(d,dhs)}}
+,
+{h:`<h3>🌿 Greenhouse Cell Models</h3><p>Respiration releases energy from nutrients so cells can do work. Glucose left: <b id="gg"></b> · Lipid reserve: <b id="ll"></b></p>
+<button class="b on" id="o2">Oxygen: ON</button><button class="b" id="rs4">Respire 1 glucose</button><button class="b" id="st4">Store 1 glucose as lipid</button><button class="b" id="dr4">Draw on lipid reserve</button><button class="b" id="rf">Refill glucose</button>
+<p>Energy released per glucose (last action)</p><div class="bar"><i id="b4"></i></div><p id="m4"></p><p style="font-size:13px;opacity:.8">Aerobic: glucose + oxygen → CO₂ + water (~30 units). Anaerobic: glucose → lactic acid (~2 units).</p>`,
+s(){const rel=k=>{const n=e4.o2?30:2;e4.last=n;e4.glow=n/30+.1;e4.seen[k]=1;beep(e4.o2?800:300)};e4.last=e4.last||0;
+$('o2').onclick=()=>{e4.o2^=1;$('o2').textContent='Oxygen: '+(e4.o2?'ON':'OFF');$('o2').classList.toggle('on',!!e4.o2)};
+$('rs4').onclick=()=>{if(e4.g<1)return H('m4','No glucose left — refill.');e4.g--;rel(e4.o2?'a':'n');H('m4',e4.o2?'<b>Aerobic respiration</b>: oxygen present, glucose fully broken down → CO₂ + water, releasing lots of energy for cell work.':'<b>Anaerobic respiration</b>: no oxygen, glucose only partly broken down (lactic acid), releasing far less energy per glucose.')};
+$('st4').onclick=()=>{if(e4.g<1||e4.L>=6)return H('m4','Need glucose to store (and room in the store).');e4.g--;e4.L++;e4.seen.s=1;beep(500);H('m4','Spare nutrients stored as <b>lipid</b> — a reserve energy store from nutrients. Respiration doesn\'t make lipids; it releases energy from nutrients.')};
+$('dr4').onclick=()=>{if(e4.L<1)return H('m4','The lipid reserve is empty — store some first.');if(!e4.o2)return H('m4','Lipid reserves are broken down using oxygen. Turn oxygen ON to draw on them.');e4.L--;rel('d');e4.seen.d=1;H('m4','Drawing on the lipid reserve later: respiration releases its stored energy for the cell to use.')};
+$('rf').onclick=()=>{e4.g=6}},
+u(dt){H('gg',e4.g);H('ll',e4.L);W('b4',e4.last/30*100);const s=e4.seen;if(s.a&&s.n&&s.s&&s.d){H('m4','✔ Aerobic vs anaerobic compared, lipid reserve stored and used — Greenhouse restored!');fin(4)}}}];
+function dr3(d,dhs){const c=$('cn');if(!c)return;const x=c.getContext('2d'),Wd=c.width,Ht=c.height,px=u=>60+u*(Wd-90),py=E=>Ht-45-E/125*(Ht-80);
+x.clearRect(0,0,Wd,Ht);x.strokeStyle='#8aa';x.fillStyle='#cfe';x.lineWidth=1.5;x.font='13px sans-serif';x.setLineDash([]);
+x.beginPath();x.moveTo(60,15);x.lineTo(60,Ht-45);x.lineTo(Wd-15,Ht-45);x.stroke();
+x.save();x.translate(18,Ht/2);x.rotate(-Math.PI/2);x.textAlign='center';x.fillText('Energy',0,0);x.restore();x.textAlign='center';x.fillText('Reaction progress',Wd/2,Ht-12);x.textAlign='left';
+x.setLineDash([4,4]);x.strokeStyle='#567';[d.R,d.P].forEach(E=>{x.beginPath();x.moveTo(60,py(E));x.lineTo(Wd-15,py(E));x.stroke()});x.setLineDash([]);
+x.fillStyle='#cfe';x.fillText('Reactants',66,py(d.R)+(d.R>d.P?-6:16));x.fillText('Products',Wd-85,py(d.P)+(d.P>d.R?-6:16));
+[0,1].forEach(k=>{const a=curve(e3.mode,k);x.beginPath();x.setLineDash(k?[6,4]:[]);x.strokeStyle=k?'#5eff9a':'#ff9a4d';x.lineWidth=k==e3.cat?4:1.5;a.forEach((E,i)=>{const X=px(i/200),Y=py(E);i?x.lineTo(X,Y):x.moveTo(X,Y)});x.stroke();x.setLineDash([]);
+const u=.1+k*.1,pk=d.pk[k];x.lineWidth=1.5;x.beginPath();x.moveTo(px(u),py(d.R));x.lineTo(px(u),py(pk));x.setLineDash([3,3]);x.lineTo(px(.42),py(pk));x.stroke();x.setLineDash([]);
+x.fillStyle=k?'#5eff9a':'#ff9a4d';x.fillText('Ea '+(pk-d.R)+(k?' (catalysed)':' (uncatalysed)'),px(u)+4,py(pk)-5-k*0)});
+x.strokeStyle='#fff';x.fillStyle='#fff';x.beginPath();x.moveTo(px(.92),py(d.R));x.lineTo(px(.92),py(d.P));x.stroke();x.fillText('ΔH = '+dhs+(d.P>d.R?' (endo)':' (exo)'),px(.55),py((d.R+d.P)/2)+(d.P>d.R?-30:30));
+const E=curve(e3.mode,e3.cat)[Math.round(e3.x*200)];x.beginPath();x.arc(px(e3.x),py(E)-8,8,0,6.283);x.fill();
+x.fillStyle='#8aa';x.font='11px sans-serif';x.fillText('kJ mol⁻¹ (illustrative scale)',Wd-170,16)}
+/* ---------- panel open/close ---------- */
+function openP(i){openIdx=i;$('pn').innerHTML=PN[i].h+'<p><button class="b" id="cl">Close</button></p>';$('pn').style.display='block';$('cl').onclick=closeP;PN[i].s();beep(500)}
+function closeP(){openIdx=-1;$('pn').style.display='none';e1.hold=e3.hold=0}
+/* ---------- input ---------- */
+const keys={};let yaw=0,pitch=.35,vy=0,jx=0,jy=0,near=-1;
+const act=()=>{if(!paused&&openIdx<0&&near>=0)openP(near)},jump=()=>{if(!paused&&openIdx<0&&pp.y<=.21)vy=8};
+addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='Escape'){if(openIdx>=0)closeP();else if(paused&&$('ov').style.display==='flex')cov();else pause()}
+if(paused||openIdx>=0)return;if(e.code==='KeyE')act();if(e.code==='Space'){e.preventDefault();jump()}});
+addEventListener('keyup',e=>keys[e.code]=0);
+let dr=null;const cv=$('c');cv.onpointerdown=e=>{dr={id:e.pointerId,x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId)};
+cv.onpointermove=e=>{if(!dr||e.pointerId!==dr.id||paused||openIdx>=0)return;yaw-=(e.clientX-dr.x)*.006;pitch=Math.max(.05,Math.min(1.2,pitch+(e.clientY-dr.y)*.005));dr.x=e.clientX;dr.y=e.clientY};
+cv.onpointerup=cv.onpointercancel=()=>dr=null;
+const joy=$('joy');function jm(e){const r=joy.getBoundingClientRect();let dx=(e.clientX-r.left-r.width/2)/(r.width/2),dy=(e.clientY-r.top-r.height/2)/(r.height/2);const l=Math.hypot(dx,dy);if(l>1){dx/=l;dy/=l}jx=dx;jy=-dy;$('kn').style.transform=`translate(${dx*30}px,${dy*30}px)`}
+joy.onpointerdown=e=>{joy.setPointerCapture(e.pointerId);jm(e)};joy.onpointermove=e=>{if(e.buttons)jm(e)};joy.onpointerup=joy.onpointercancel=()=>{jx=jy=0;$('kn').style.transform=''};
+$('bE').onpointerdown=e=>{e.preventDefault();act()};$('bJ').onpointerdown=e=>{e.preventDefault();jump()};
+$('bj').onclick=jrn;$('bp').onclick=pause;$('bsn').onclick=()=>{snd=!snd;$('bsn').textContent=snd?'🔊':'🔇'};
+/* ---------- loop ---------- */
+let last=performance.now(),tm=0;
+function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/1000);last=now;tm+=dt;
+if(!paused&&openIdx<0){let ix=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0)+jx,iy=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0)+jy;const l=Math.hypot(ix,iy);if(l>1){ix/=l;iy/=l}
+const mx=ix*Math.cos(yaw)-iy*Math.sin(yaw),mz=-ix*Math.sin(yaw)-iy*Math.cos(yaw);pp.x+=mx*7*dt;pp.z+=mz*7*dt;if(l>.1)pl.rotation.y=Math.atan2(mx,mz);
+const r=Math.hypot(pp.x,pp.z);if(r>36){pp.x*=36/r;pp.z*=36/r}
+const on=ST.some(s=>Math.hypot(pp.x-s.p.x,pp.z-s.p.z)<5.5),gr=on?.2:0;vy-=22*dt;pp.y+=vy*dt;if(pp.y<=gr){pp.y=gr;vy=0}}
+pl.position.copy(pp);
+cam.position.set(pp.x+Math.sin(yaw)*Math.cos(pitch)*7,pp.y+1.6+Math.sin(pitch)*7,pp.z+Math.cos(yaw)*Math.cos(pitch)*7);cam.lookAt(pp.x,pp.y+1.4,pp.z);
+near=-1;let bd=5.4;ST.forEach((s,i)=>{const d=Math.hypot(pp.x-s.p.x,pp.z-s.p.z);if(d<bd){bd=d;near=i}});
+$('ht').textContent=!paused&&openIdx<0&&near>=0?(matchMedia('(pointer:coarse)').matches?'Tap E — ':'Press E — ')+ST[near].n+(save.done.includes(near)?' ✔':''):'';
+const f=save.done.length/5;
+ST.forEach((s,i)=>{const dn=save.done.includes(i);s.u(tm);s.l.intensity+=((dn?2.6:.35)-s.l.intensity)*.05;s.bc.material.opacity=dn?.15:.35+.2*Math.sin(tm*3)});
+BL.forEach(b=>b.material.emissiveIntensity+=((.05+f*.9)-b.material.emissiveIntensity)*.03);CR.forEach(c=>c.material.emissiveIntensity=.6+f*.8);hemi.intensity=.6+f*.6;
+e2.flash=Math.max(0,e2.flash-dt*2);e4.glow=Math.max(0,e4.glow-dt*.5);
+for(let i=CF.length-1;i>=0;i--){const m=CF[i];m.v.y-=9.8*dt;m.position.addScaledVector(m.v,dt);m.life-=dt;if(m.life<0||m.position.y<0){sc.remove(m);CF.splice(i,1)}}
+if(openIdx>=0&&!paused)PN[openIdx].u(dt);
+R.render(sc,cam)}
+/* ---------- start ---------- */
+function applyDone(){if(save.done.includes(0)){e0.sys=60;e0.warm=1}if(save.done.includes(1)){e1.prog=100;e1.cold=1}if(save.done.includes(2)){e2.b1=e2.b2=e2.f1=e2.f2=1}if(save.done.includes(3)){e3.seen={c:1,u:1}}if(save.done.includes(4)){e4.seen={a:1,n:1,s:1,d:1}}}
+applyDone();hud();place();
+function go(){cov();beep(600)}
+function intro(){ov(`<h2>🔷 Thermal Rift: The Lost City</h2><p>You are Ren, a young explorer. Deep inside a giant crystal cavern lies a forgotten city whose five energy engines have gone dark.</p><p>Walk to each glowing station and <b>experiment</b>. Energy always goes somewhere — follow it, and the city will wake up.</p><button class="b" id="n1">Next ▶</button><button class="b" id="n2">Skip intro</button>`);
+$('n2').onclick=go;$('n1').onclick=()=>{ov(`<h2>Controls</h2><p><b>WASD / arrows</b> move · <b>drag</b> to look · <b>Space</b> jump · <b>E</b> use a station · <b>Esc</b> pause.<br>On touch: joystick, drag the screen to look, ⤒ jump, E to use.</p><p>Mistakes are safe: try again as often as you like. Your progress is saved at checkpoints.</p><button class="b" id="n3">Start exploring</button>`);$('n3').onclick=go}}
+intro();requestAnimationFrame(loop);
+</script></body></html>
